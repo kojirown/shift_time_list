@@ -1,0 +1,4 @@
+SQLAlchemy
+requests
+faker
+pytest
