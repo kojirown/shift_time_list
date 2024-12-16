@@ -5,6 +5,7 @@ from sqlite_dateconverter import sqlite_date_converter
 
 class DbClass:
     """
+        DBの初期化とCURDを担うクラス
     """
     def __init__(self,db_path:Path|str="test.db"):
         sqlite_date_converter.sqlite_date_converter_init()
@@ -18,17 +19,17 @@ class DbClass:
             "SHIFT_SCHEDULE_DB_NAME":"ShiftSchedule"
         }
         # テーブルがなければ初期化
-        if self.DBNAME("USER_MASTER_DB_NAME") not in (ex[0] for ex in self.cur.execute("SELECT name FROM sqlite_master").fetchall()):
-            self.cur.execute(f"CREATE TABLE {self.DBNAME("USER_MASTER_DB_NAME")}(id integer primary key autoincrement,num integra,name text,address text);")
+        if self.__dbname_list_dict["USER_MASTER_DB_NAME"] not in (ex[0] for ex in self.cur.execute("SELECT name FROM sqlite_master").fetchall()):
+            self.cur.execute(f"CREATE TABLE {self.__dbname_list_dict["USER_MASTER_DB_NAME"]}(id integer primary key autoincrement,num integra,name text,address text);")
             self.con.commit()
 
-        if self.DBNAME("SHIFT_SCHEDULE_DB_NAME") not in (ex[0] for ex in self.cur.execute("SELECT name FROM sqlite_master").fetchall()):
-            self.cur.execute(f"""CREATE TABLE {self.DBNAME("SHIFT_SCHEDULE_DB_NAME")}(
+        if self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"] not in (ex[0] for ex in self.cur.execute("SELECT name FROM sqlite_master").fetchall()):
+            self.cur.execute(f"""CREATE TABLE {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}(
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 user_id INTEGER NOT NULL,
                                 starttime DATETIME,
                                 endtime DATETIME,
-                                FOREIGN KEY (user_id) REFERENCES {self.DBNAME("USER_MASTER_DB_NAME")}(id)
+                                FOREIGN KEY (user_id) REFERENCES {self.__dbname_list_dict["USER_MASTER_DB_NAME"]}(id)
                                 );
                                 """)
             self.con.commit()
@@ -42,7 +43,7 @@ class DbClass:
         """
         result:list = list(
             self.cur.execute(f"""SELECT id,name 
-                            FROM {self.DBNAME("USER_MASTER_DB_NAME")} 
+                            FROM {self.__dbname_list_dict["USER_MASTER_DB_NAME"]} 
                             WHERE name LIKE ?; 
                         """,(f"{search_name[:2]}%",))
         )   
@@ -61,7 +62,7 @@ class DbClass:
         id_search_result:tuple[tuple[int,str]] = tuple(self.con.execute(
                         f"""
                             SELECT id
-                            FROM {self.DBNAME("USER_MASTER_DB_NAME")} 
+                            FROM {self.__dbname_list_dict["USER_MASTER_DB_NAME"]} 
                             WHERE id =  LIKE ?; 
                         """,(search_num,)))
         if len(id_search_result) >= 1:
@@ -80,7 +81,7 @@ class DbClass:
         id_search_result:tuple[tuple[int,str]] = tuple(self.con.execute(
                             f"""
                             SELECT id
-                            FROM {self.DBNAME("USER_MASTER_DB_NAME")} 
+                            FROM {self.__dbname_list_dict["USER_MASTER_DB_NAME"]} 
                             WHERE id =  LIKE ?; 
                             """,))
         return False
@@ -88,10 +89,6 @@ class DbClass:
     @property
     def DBNAME_lIST(self):
         return self.__dbname_list_dict
-    
-    def DBNAME(self,dbkey:str) -> str:
-        return self.__dbname_list_dict.setdefault(dbkey,"None")
-
 
 
     # def __del__(self):
