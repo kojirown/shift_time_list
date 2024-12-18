@@ -2,3 +2,5 @@
 /.venver
 /test.db
 __pycache__
+.github
+.vscode
