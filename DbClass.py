@@ -1,3 +1,4 @@
+from datetime import datetime
 import sqlite3
 from typing import Final ,TypedDict
 
@@ -12,6 +13,14 @@ class DbClass:
         SHIFT_SCHEDULE_DB_NAMEは社員の勤務時間を管理する。
         クラスが初期化されるとDBが作成される。
     """
+    #1日のshift_dataを表す独自辞書型DayShiftを作る
+    #dateは日付だけを表す
+    class dayShift(TypedDict):
+        user_id:int
+        shift_id:int
+        starttime:datetime
+        endtime:datetime
+        date:datetime
     def __init__(self,db_path:Path|str="test.db"):
         #日付型を使えるようにする
         sqlite_date_converter.sqlite_date_converter_init()
@@ -169,11 +178,145 @@ class DbClass:
         self.con.commit()
         return True
 
+## ここからShiftScheduleテーブルの関数
+
+
+    #user_idを指定してそのユーザーの勤務情報をDBから探す。
+    # 第三引数を可変数引数date_dataで
+    # - 2つのdatatime型でstart_dateとend_dateを指定してその範囲のデータを取得する
+    # - 1つdatetime型を指定してdateを指定してその日のデータを取得する
+    # - 何も指定で全てのデータを取得する
+    # 　date_dataのそれぞれのデータはlistやtupleで取得する
+    def select_by_user_shift_data(self,user_id:int,*date_data:datetime)->tuple[dayShift,...] | None:
+        """
+        ユーザーIDを指定してそのユーザーの勤務情報をDBから探します。
+        第三引数を可変数引数date_dataで
+        - 2つのdatatime型でstart_dateとend_dateを指定してその範囲のデータを取得します
+        - 1つdatetime型を指定してdateを指定してその日のデータを取得します
+        - 何も指定で全てのデータを取得します
+        date_dataのそれぞれのデータはlistやtupleで取得します
+        """
+        if not self.is_exist_userdate_id(user_id):
+            return None
+        
+        if len(date_data) == 0:
+            result = self.cur.execute(f"""
+                SELECT user_id,id,starttime,endtime, DATE(starttime)
+                FROM {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}
+                WHERE user_id = ?;
+            """,(user_id,)).fetchall()
+        elif len(date_data) == 2:
+            result = self.cur.execute(f"""
+                SELECT user_id,id,starttime,endtime,DATE(starttime)
+                FROM {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}
+                WHERE user_id = ? AND starttime <= ? AND endtime >=?;
+            """,(user_id,date_data[0],date_data[1])).fetchall()
+        elif len(date_data) == 1:
+            result = self.cur.execute(f"""
+            SELECT user_id,id,starttime,endtime, DATE(starttime)
+            FROM {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}
+            WHERE user_id = ? AND DATE(starttime) = ?;
+            """,(user_id,date_data[0].date())).fetchall()
+        else:
+            return None
+        result_tuple:tuple[DbClass.dayShift,...] = tuple([{"user_id":t[0],"shift_id":t[1],"starttime":t[2],"endtime":t[3],"date":t[4]} for t in result])
+        return result_tuple
+    
+    def select_by_shift_id(self,shift_id:int)->dayShift | None:
+        """
+        SHIFT_IDを指定してそのIDの勤務情報をDBから探します。
+        """
+        if not self.cur.execute(f"""
+            SELECT id
+            FROM {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]} 
+            WHERE id = ?; 
+        """,(shift_id,)).fetchone():
+            return None
+        
+        result = self.cur.execute(f"""
+            SELECT user_id,id,starttime,endtime, DATE(starttime)
+            FROM {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}
+            WHERE id = ?;
+        """,(shift_id,)).fetchone()
+        return {"user_id":result[0],"shift_id":result[1],"starttime":result[2],"endtime":result[3],"date":result[4]}
+
+    def insert_shift_data(self,shift_data:tuple[int,datetime,datetime])->bool:
+        """
+        勤務時間を登録します。
+        成功したらTrueを返します
+        """
+        # UserDataのIDが存在するかを確認
+        if not self.is_exist_userdate_id(shift_data[0]):
+            return False
+        
+        self.cur.execute(f"""
+            INSERT INTO {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]} (user_id,starttime,endtime)
+            VALUES (?,?,?);
+        """, shift_data)
+        self.con.commit()
+        return True
+    
+    def update_shift_data(self,shift_id:int,new_starttime:datetime,new_endtime:datetime)->bool:
+        """
+        勤務時間を更新します。
+        引数
+        shft_id:int 更新するデータのID
+        new_starttime:datetime 更新する開始時間
+        new_endtime:datetime 更新する終了時間
+        成功したらTrueを返します
+        start_timeとend_timeのどちらかだけでも更新できます。
+        """
+        # shft_idが存在するかを確認し、存在しなければFalseを返します。
+        # 返ってきたDbClass.dayShiftから更新ためのデータを取得します。
+        if not (old_shift_data := self.select_by_shift_id(shift_id)):
+            return False
+        
+        # 更新するフィールドを動的に決定
+        update_fields: list[str] = []
+        update_values: list[datetime|int] = []
+        
+        if new_starttime is not None:
+            update_fields.append("starttime = ?")
+            update_values.append(new_starttime)
+        
+        if new_endtime is not None:
+            update_fields.append("endtime = ?")
+            update_values.append(new_endtime)
+        
+        if not update_fields:
+            return False
+        
+        update_values.append(shift_id)
+        
+        self.cur.execute(f"""
+            UPDATE {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}
+            SET {', '.join(update_fields)}
+            WHERE id = ?;
+            """, update_values)
+        self.con.commit()
+        return True
+    
+    def delete_shift_data(self,shift_id:int)->bool:
+        """
+        勤務時間を削除します。
+        成功したらTrueを返します
+        """
+        # shft_idが存在するかを確認し、存在しなければFalseを返します。
+        if not self.select_by_shift_id(shift_id):
+            return False
+        
+        self.cur.execute(f"""
+            DELETE FROM {self.__dbname_list_dict["SHIFT_SCHEDULE_DB_NAME"]}
+            WHERE id = ?;
+            """,(shift_id,))
+        self.con.commit()
+        return True
 
     @property
     def DBNAME_lIST(self):
         return self.__dbname_list_dict
 
+    #デストラクターでDBを閉じる
 
     # def __del__(self):
     #     self.con.close()
